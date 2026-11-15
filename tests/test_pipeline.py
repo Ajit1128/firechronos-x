@@ -107,14 +107,6 @@ def test_preserves_nrt_processing_separately_from_standard(tmp_path):
     assert metadata["source_processing"] == ["near_real_time", "standard"]
 
 
-def test_rejects_csv_without_instrument(tmp_path):
-    df = pd.read_csv(M, dtype=str).drop(columns=["instrument"])
-    path = tmp_path / "no_instrument.csv"
-    df.to_csv(path, index=False)
-    with pytest.raises(FIRMSValidationError, match="Faltan columnas obligatorias"):
-        load_firms_csv(path, "MODIS")
-
-
 def test_rejects_non_snpp_satellite_even_with_viirs_instrument(tmp_path):
     df = pd.read_csv(V, dtype=str)
     df.loc[0, "satellite"] = "N20"
@@ -194,5 +186,30 @@ def test_preserves_viirs_confidence_and_type(tmp_path):
     assert normalized["type_raw"].tolist() == [
         "0", "3"
     ]
+
+
+def test_accepts_modis_without_instrument(tmp_path):
+    df = pd.read_csv(M, dtype=str).drop(columns=["instrument"])
+    path = tmp_path / "modis_without_instrument.csv"
+    df.to_csv(path, index=False)
+
+    normalized, metadata = load_firms_csv(path, "MODIS")
+
+    assert len(normalized) == len(df)
+    assert normalized["instrument"].eq("").all()
+    assert metadata["instrument_column_present"] is False
+    assert "instrument" not in metadata["original_columns"]
+
+
+def test_rejects_viirs_without_instrument(tmp_path):
+    df = pd.read_csv(V, dtype=str).drop(columns=["instrument"])
+    path = tmp_path / "viirs_without_instrument.csv"
+    df.to_csv(path, index=False)
+
+    with pytest.raises(
+        FIRMSValidationError,
+        match="Falta columna instrument",
+    ):
+        load_firms_csv(path, "VIIRS_SNPP")
 
 

@@ -44,8 +44,17 @@ def compare(df: pd.DataFrame, radius_km: float = 1.0, minutes: float = 60.0,
     if not set(df["sensor"].dropna().unique()).issubset({"MODIS", "VIIRS_SNPP"}):
         raise ValueError("Unexpected sensor; expected MODIS and VIIRS_SNPP")
     data = df.copy()
+    # Blank, missing, and unclassified values are not assumed to be type 0.
+    # Compute audit counts on the ORIGINAL input, before filtering rows.
+    types = data["type_raw"].astype("string").fillna("").str.strip()
+    type_missing = types.eq("")
+    excluded_missing = int(type_missing.sum()) if type_zero_only else 0
+    excluded_other = (
+        int((~type_missing & types.ne("0")).sum()) if type_zero_only else 0
+    )
+
     if type_zero_only:
-        data = data.loc[data["type_raw"].astype("string").str.strip().eq("0").fillna(False)].copy()
+        data = data.loc[types.eq("0")].copy()
     for col in ("latitude", "longitude"):
         data[col] = pd.to_numeric(data[col], errors="raise")
     if data[["latitude", "longitude"]].isna().any().any():
@@ -93,6 +102,13 @@ def compare(df: pd.DataFrame, radius_km: float = 1.0, minutes: float = 60.0,
         "radius_km": radius_km,
         "time_window_minutes": minutes,
         "type_zero_only": type_zero_only,
+        "type_missing_in_input": int(type_missing.sum()),
+        "type_missing_by_sensor": {
+            "MODIS": int((df["sensor"].eq("MODIS") & type_missing).sum()),
+            "VIIRS_SNPP": int((df["sensor"].eq("VIIRS_SNPP") & type_missing).sum()),
+        },
+        "excluded_missing_type": excluded_missing,
+        "excluded_other_type": excluded_other,
         "input_count": len(df),
         "selected_modis": len(modis),
         "selected_viirs": len(viirs),
@@ -104,6 +120,7 @@ def compare(df: pd.DataFrame, radius_km: float = 1.0, minutes: float = 60.0,
             "Unmatched VIIRS does NOT imply missing MODIS coverage or sensor failure.",
             "Pixel footprints, orbit times, confidence, observation biases and uncertainty are not calibrated.",
             "Thresholds are exploratory and must be assessed with sensitivity analysis.",
+            "Default type=0 mode excludes missing and other classifications; --all-types includes them.",
         ],
     }
     return pairs, report
