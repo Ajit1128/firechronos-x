@@ -65,3 +65,60 @@ def test_fails_on_wrong_period_without_output(tmp_path):
     with pytest.raises(FIRMSValidationError, match="fuera del intervalo"):
         process_pair(M, V, out, "2025-01-01", "2025-01-31")
     assert not out.exists()
+
+
+def test_rejects_wrong_modis_collection_without_false_provenance(tmp_path):
+    df = pd.read_csv(M, dtype=str)
+    df.loc[0, "version"] = "5.0"
+    path = tmp_path / "modis_wrong_collection.csv"
+    df.to_csv(path, index=False)
+    with pytest.raises(FIRMSValidationError, match="Versión/colección incompatible"):
+        load_firms_csv(path, "MODIS")
+
+
+def test_rejects_wrong_viirs_collection(tmp_path):
+    df = pd.read_csv(V, dtype=str)
+    df.loc[0, "version"] = "1.0"
+    path = tmp_path / "viirs_wrong_collection.csv"
+    df.to_csv(path, index=False)
+    with pytest.raises(FIRMSValidationError, match="Versión/colección incompatible"):
+        load_firms_csv(path, "VIIRS_SNPP")
+
+
+def test_rejects_csv_without_version(tmp_path):
+    df = pd.read_csv(M, dtype=str).drop(columns=["version"])
+    path = tmp_path / "no_version.csv"
+    df.to_csv(path, index=False)
+    with pytest.raises(FIRMSValidationError, match="Faltan columnas obligatorias"):
+        load_firms_csv(path, "MODIS")
+
+
+def test_preserves_nrt_processing_separately_from_standard(tmp_path):
+    df = pd.read_csv(V, dtype=str)
+    df.loc[0, "version"] = "2.0NRT"
+    path = tmp_path / "mixed_processing.csv"
+    df.to_csv(path, index=False)
+    output, metadata = load_firms_csv(path, "VIIRS_SNPP")
+    assert output.loc[0, "version"] == "2.0NRT"
+    assert output.loc[0, "source_product"] == "suomi-viirs-c2-nrt"
+    assert output.loc[0, "source_processing"] == "near_real_time"
+    assert output.loc[1, "source_product"] == "suomi-viirs-c2"
+    assert output.loc[1, "source_processing"] == "standard"
+    assert metadata["source_processing"] == ["near_real_time", "standard"]
+
+
+def test_rejects_csv_without_instrument(tmp_path):
+    df = pd.read_csv(M, dtype=str).drop(columns=["instrument"])
+    path = tmp_path / "no_instrument.csv"
+    df.to_csv(path, index=False)
+    with pytest.raises(FIRMSValidationError, match="Faltan columnas obligatorias"):
+        load_firms_csv(path, "MODIS")
+
+
+def test_rejects_non_snpp_satellite_even_with_viirs_instrument(tmp_path):
+    df = pd.read_csv(V, dtype=str)
+    df.loc[0, "satellite"] = "N20"
+    path = tmp_path / "wrong_satellite.csv"
+    df.to_csv(path, index=False)
+    with pytest.raises(FIRMSValidationError, match="Satélite incompatible"):
+        load_firms_csv(path, "VIIRS_SNPP")

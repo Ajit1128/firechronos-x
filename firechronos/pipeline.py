@@ -13,10 +13,22 @@ from pathlib import Path
 
 import pandas as pd
 
-REQUIRED_COLUMNS = {"latitude", "longitude", "acq_date", "acq_time"}
+REQUIRED_COLUMNS = {"latitude", "longitude", "acq_date", "acq_time", "instrument", "satellite", "version"}
 ALLOWED_SENSORS = {"MODIS", "VIIRS_SNPP"}
+# FIRMS version denotes collection AND processing stream (NASA FIRMS attribute tables).
+# Fail closed on unknown collections, rather than fabricating provenance labels.
+EXPECTED_COLLECTIONS = {
+    "MODIS": ("6.1", "modis-c6.1"),
+    "VIIRS_SNPP": ("2.0", "suomi-viirs-c2"),
+}
+PROCESSING_SUFFIXES = {
+    "": "standard",
+    "NRT": "near_real_time",
+    "RT": "real_time",
+    "URT": "ultra_real_time",
+}
 NORMALIZED_COLUMNS = [
-    "sensor", "source_product", "source_file", "source_sha256", "source_row",
+    "sensor", "source_product", "source_processing", "source_file", "source_sha256", "source_row",
     "latitude", "longitude", "acq_date", "acq_time", "acquired_at_utc",
     "satellite", "instrument", "version", "confidence_raw", "confidence_scale",
     "frp_raw", "frp_mw", "daynight", "scan_km", "track_km",
@@ -70,6 +82,50 @@ def _parse_times(df: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series]:
     return dates, times, acquired
 
 
+def _validate_identity_and_version(df: pd.DataFrame, sensor: str) -> tuple[pd.Series, pd.Series]:
+    """Require FIRMS CSV metadata consistent with the declared satellite/product.
+
+    Confirms internal CSV consistency, NOT independent NASA authenticity.
+    """
+    expected_instrument = "MODIS" if sensor == "MODIS" else "VIIRS"
+    instruments = _text_column(df, "instrument").str.upper()
+    bad_instrument = instruments != expected_instrument
+    if bad_instrument.any():
+        raise FIRMSValidationError(
+            f"Incompatibilidad de sensor declarado {sensor}: "
+            f"instrument encontrado {sorted(instruments[bad_instrument].unique().tolist())}."
+        )
+
+    # NASA FIRMS: T=Terra, A=Aqua, N=Suomi NPP. Do not label NOAA-20/21 as S-NPP.
+    allowed_satellites = {"T", "A"} if sensor == "MODIS" else {"N"}
+    satellites = _text_column(df, "satellite").str.upper()
+    bad_satellite = ~satellites.isin(allowed_satellites)
+    if bad_satellite.any():
+        raise FIRMSValidationError(
+            f"Satélite incompatible con {sensor}: "
+            f"{sorted(satellites[bad_satellite].unique().tolist())}."
+        )
+
+    expected_version, product_label = EXPECTED_COLLECTIONS[sensor]
+    versions = _text_column(df, "version").str.upper()
+    products = pd.Series(index=df.index, dtype="string")
+    processing = pd.Series(index=df.index, dtype="string")
+    for suffix, processing_name in PROCESSING_SUFFIXES.items():
+        matching = versions == f"{expected_version}{suffix}".upper()
+        products.loc[matching] = product_label + (f"-{suffix.lower()}" if suffix else "")
+        processing.loc[matching] = processing_name
+
+    invalid = processing.isna()
+    if invalid.any():
+        rows = (df.index[invalid][:5] + 2).tolist()
+        values = sorted(versions[invalid].unique().tolist())
+        raise FIRMSValidationError(
+            f"Versión/colección incompatible con {sensor} en líneas {rows}: "
+            f"{values}. Se esperaba {expected_version} (+ NRT/RT/URT opcional)."
+        )
+    return products, processing
+
+
 def load_firms_csv(path: Path | str, sensor: str) -> tuple[pd.DataFrame, dict]:
     """Read a sensor-declared FIRMS CSV, validate basic schema, preserve provenance.
 
@@ -96,13 +152,7 @@ def load_firms_csv(path: Path | str, sensor: str) -> tuple[pd.DataFrame, dict]:
         raise FIRMSValidationError(f"Faltan columnas obligatorias en {path.name}: {missing}")
     if df.empty:
         raise FIRMSValidationError(f"CSV sin filas: {path.name}")
-    if "instrument" in df and (df["instrument"].astype(str).str.strip() != "").any():
-        instruments = set(df["instrument"].astype(str).str.strip().str.upper()) - {""}
-        expected = "MODIS" if sensor == "MODIS" else "VIIRS"
-        if instruments - {expected}:
-            raise FIRMSValidationError(
-                f"Incompatibilidad de sensor declarado {sensor}; instrument encontrados: {sorted(instruments)}"
-            )
+    source_products, source_processing = _validate_identity_and_version(df, sensor)
     lat = _numeric_column(df, "latitude")
     lon = _numeric_column(df, "longitude")
     _assert_valid_coordinates(df, lat, lon)
@@ -114,7 +164,8 @@ def load_firms_csv(path: Path | str, sensor: str) -> tuple[pd.DataFrame, dict]:
     sha256 = _sha256(path)
     normalized = pd.DataFrame(index=df.index)
     normalized["sensor"] = sensor
-    normalized["source_product"] = "modis-c6.1" if sensor == "MODIS" else "suomi-viirs-c2"
+    normalized["source_product"] = source_products
+    normalized["source_processing"] = source_processing
     normalized["source_file"] = path.name
     normalized["source_sha256"] = sha256
     normalized["source_row"] = df.index + 2
@@ -136,6 +187,8 @@ def load_firms_csv(path: Path | str, sensor: str) -> tuple[pd.DataFrame, dict]:
     normalized = normalized[NORMALIZED_COLUMNS]
     details = {
         "sensor": sensor,
+        "source_products": sorted(source_products.unique().tolist()),
+        "source_processing": sorted(source_processing.unique().tolist()),
         "file": path.name,
         "sha256": sha256,
         "records": int(len(df)),
