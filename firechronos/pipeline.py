@@ -91,11 +91,11 @@ def _validate_identity_and_version(df: pd.DataFrame, sensor: str) -> tuple[pd.Se
 
     Confirms internal CSV consistency, NOT independent NASA authenticity.
     """
-    
-    
+
+
     # Validate instrument only when supplied by the CSV.
     # MODIS archives may omit this column.
-    
+
     # Validate instrument only when supplied by the CSV.
     if "instrument" in df.columns:
         allowed_instruments = (
@@ -191,7 +191,7 @@ def load_firms_csv(path: Path | str, sensor: str) -> tuple[pd.DataFrame, dict]:
     if missing:
         raise FIRMSValidationError(f"Faltan columnas obligatorias en {path.name}: {missing}")
 
-    
+
     if sensor == "VIIRS_SNPP" and "instrument" not in df.columns:
         raise FIRMSValidationError(
             "Falta columna instrument para VIIRS_SNPP."
