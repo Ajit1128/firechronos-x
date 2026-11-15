@@ -30,7 +30,7 @@ PROCESSING_SUFFIXES = {
 NORMALIZED_COLUMNS = [
     "sensor", "source_product", "source_processing", "source_file", "source_sha256", "source_row",
     "latitude", "longitude", "acq_date", "acq_time", "acquired_at_utc",
-    "satellite", "instrument", "version", "confidence_raw", "confidence_scale",
+    "satellite", "instrument", "version", "confidence_raw", "confidence_scale","type_raw",
     "frp_raw", "frp_mw", "daynight", "scan_km", "track_km",
     "brightness_k", "bright_t31_k", "bright_ti4_k", "bright_ti5_k",
 ]
@@ -87,9 +87,13 @@ def _validate_identity_and_version(df: pd.DataFrame, sensor: str) -> tuple[pd.Se
 
     Confirms internal CSV consistency, NOT independent NASA authenticity.
     """
-    expected_instrument = "MODIS" if sensor == "MODIS" else "VIIRS"
+    
+    allowed_instruments = (
+        {"MODIS"} if sensor == "MODIS" else {"VIIRS", "SNPP"}
+    )
     instruments = _text_column(df, "instrument").str.upper()
-    bad_instrument = instruments != expected_instrument
+    bad_instrument = ~instruments.isin(allowed_instruments)
+
     if bad_instrument.any():
         raise FIRMSValidationError(
             f"Incompatibilidad de sensor declarado {sensor}: "
@@ -97,7 +101,13 @@ def _validate_identity_and_version(df: pd.DataFrame, sensor: str) -> tuple[pd.Se
         )
 
     # NASA FIRMS: T=Terra, A=Aqua, N=Suomi NPP. Do not label NOAA-20/21 as S-NPP.
-    allowed_satellites = {"T", "A"} if sensor == "MODIS" else {"N"}
+
+    allowed_satellites = (
+        {"T", "A", "TERRA", "AQUA"}
+        if sensor == "MODIS"
+        else {"N", "SUOMI NPP", "SUOMI-NPP", "S-NPP", "SNPP"}
+    )
+
     satellites = _text_column(df, "satellite").str.upper()
     bad_satellite = ~satellites.isin(allowed_satellites)
     if bad_satellite.any():
@@ -114,6 +124,23 @@ def _validate_identity_and_version(df: pd.DataFrame, sensor: str) -> tuple[pd.Se
         matching = versions == f"{expected_version}{suffix}".upper()
         products.loc[matching] = product_label + (f"-{suffix.lower()}" if suffix else "")
         processing.loc[matching] = processing_name
+
+
+    # Identificador observado en el archivo histórico MODIS C6.1.
+    # Se conserva la versión original y no se presupone el
+    # tipo de procesamiento a partir del sufijo ".03".
+    if sensor == "MODIS":
+        archive_version = versions.eq("61.03")
+        products.loc[archive_version] = product_label
+        processing.loc[archive_version] = "unverified_archive"
+
+
+    if sensor == "VIIRS_SNPP":
+        archive_version = versions.eq("2")
+        products.loc[archive_version] = product_label
+        processing.loc[archive_version] = "unverified_archive"
+
+
 
     invalid = processing.isna()
     if invalid.any():
@@ -177,6 +204,7 @@ def load_firms_csv(path: Path | str, sensor: str) -> tuple[pd.DataFrame, dict]:
     for col in ("satellite", "instrument", "version", "daynight"):
         normalized[col] = _text_column(df, col)
     normalized["confidence_raw"] = _text_column(df, "confidence")
+    normalized["type_raw"] = _text_column(df, "type")
     normalized["confidence_scale"] = "numeric_0_100" if sensor == "MODIS" else "categorical_low_nominal_high"
     normalized["frp_raw"] = frp_raw
     normalized["frp_mw"] = frp

@@ -122,3 +122,77 @@ def test_rejects_non_snpp_satellite_even_with_viirs_instrument(tmp_path):
     df.to_csv(path, index=False)
     with pytest.raises(FIRMSValidationError, match="Satélite incompatible"):
         load_firms_csv(path, "VIIRS_SNPP")
+
+@pytest.mark.parametrize("satellite", ["Terra", "Aqua"])
+def test_accepts_modis_archive_satellite_names(tmp_path, satellite):
+    df = pd.read_csv(M, dtype=str)
+    df.loc[0, "satellite"] = satellite
+
+    path = tmp_path / "modis_archive.csv"
+    df.to_csv(path, index=False)
+
+    normalized, _ = load_firms_csv(path, "MODIS")
+
+    assert normalized.loc[0, "satellite"] == satellite
+
+
+def test_modis_archive_version_61_03(tmp_path):
+    df = pd.read_csv(M, dtype=str)
+    df["version"] = "61.03"
+
+    path = tmp_path / "modis_archive.csv"
+    df.to_csv(path, index=False)
+
+    normalized, _ = load_firms_csv(path, "MODIS")
+
+    assert set(normalized["version"]) == {"61.03"}
+    assert set(normalized["source_product"]) == {"modis-c6.1"}
+    assert set(normalized["source_processing"]) == {
+        "unverified_archive"
+    }
+
+
+def test_accepts_viirs_snpp_archive_identifiers(tmp_path):
+    df = pd.read_csv(V, dtype=str)
+    df["instrument"] = "SNPP"
+    df["satellite"] = "SNPP"
+    df["version"] = "2"
+
+    path = tmp_path / "fire_archive_SV-C2_test.csv"
+    df.to_csv(path, index=False)
+
+    normalized, _ = load_firms_csv(path, "VIIRS_SNPP")
+
+    assert len(normalized) == len(df)
+    assert set(normalized["instrument"]) == {"SNPP"}
+    assert set(normalized["satellite"]) == {"SNPP"}
+    assert set(normalized["version"]) == {"2"}
+    assert set(normalized["source_product"]) == {
+        "suomi-viirs-c2"
+    }
+    assert set(normalized["source_processing"]) == {
+        "unverified_archive"
+    }
+
+
+def test_preserves_viirs_confidence_and_type(tmp_path):
+    df = pd.read_csv(V, dtype=str)
+
+    df["confidence"] = ["n", "h"]
+    df["type"] = ["0", "3"]
+
+    path = tmp_path / "viirs_types.csv"
+    df.to_csv(path, index=False)
+
+    normalized, _ = load_firms_csv(
+        path, "VIIRS_SNPP"
+    )
+
+    assert normalized["confidence_raw"].tolist() == [
+        "n", "h"
+    ]
+    assert normalized["type_raw"].tolist() == [
+        "0", "3"
+    ]
+
+
