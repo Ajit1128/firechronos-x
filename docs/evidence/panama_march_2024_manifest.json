@@ -1,0 +1,82 @@
+{
+    "project":  "FireChronos X",
+    "dataset":  "NASA FIRMS Panama March 2024",
+    "period_start":  "2024-03-01",
+    "period_end":  "2024-03-31",
+    "archive_request_ids":  {
+                                "VIIRS_SNPP":  "850536",
+                                "MODIS":  "850535"
+                            },
+    "scientific_status":  "schema_normalized_not_scientifically_harmonized",
+    "record_count_total":  4322,
+    "sources":  [
+                    {
+                        "sensor":  "MODIS",
+                        "file":  "fire_archive_M-C61_850535.csv",
+                        "records":  674,
+                        "sha256":  "72c7019e160cafc307305ce67bdff26ae61e98d5f9d976365a3f08737a682ba3",
+                        "products":  [
+                                         "modis-c6.1"
+                                     ],
+                        "processing":  [
+                                           "unverified_archive"
+                                       ]
+                    },
+                    {
+                        "sensor":  "VIIRS_SNPP",
+                        "file":  "fire_archive_SV-C2_850536.csv",
+                        "records":  3648,
+                        "sha256":  "03e6f810cea5d3416bdb769e9082685ab3d605d91fabe83522d521acc0aaac24",
+                        "products":  [
+                                         "suomi-viirs-c2"
+                                     ],
+                        "processing":  [
+                                           "unverified_archive"
+                                       ]
+                    }
+                ],
+    "normalized_sha256":  "9d75a0e6c09d00230749a780e8cd250f07c6a54a60f2047cacaa212f90357d5e",
+    "geospatial":  {
+                       "inside_land":  4313,
+                       "outside_land":  9,
+                       "boundary_sha256":  "bcd13a0fb945586315b8501513a89d44ac66bd9f51a2b77bc3167371da2f7f46"
+                   },
+    "sensitivity":  [
+                        {
+                            "scenario":  "strict",
+                            "radius_km":  0.5,
+                            "time_minutes":  30.0,
+                            "viirs_with_candidate":  131,
+                            "modis_with_candidate":  81
+                        },
+                        {
+                            "scenario":  "distance",
+                            "radius_km":  0.5,
+                            "time_minutes":  60.0,
+                            "viirs_with_candidate":  150,
+                            "modis_with_candidate":  94
+                        },
+                        {
+                            "scenario":  "time",
+                            "radius_km":  1.0,
+                            "time_minutes":  30.0,
+                            "viirs_with_candidate":  268,
+                            "modis_with_candidate":  134
+                        },
+                        {
+                            "scenario":  "baseline",
+                            "radius_km":  1.0,
+                            "time_minutes":  60.0,
+                            "viirs_with_candidate":  330,
+                            "modis_with_candidate":  172
+                        },
+                        {
+                            "scenario":  "wide",
+                            "radius_km":  2.0,
+                            "time_minutes":  120.0,
+                            "viirs_with_candidate":  473,
+                            "modis_with_candidate":  213
+                        }
+                    ],
+    "limitation":  "Exploratory proximity only; not validated harmonization or individual fire identification."
+}
