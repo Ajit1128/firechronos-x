@@ -52,3 +52,30 @@ def test_type_filter_and_invalid_parameters():
     assert len(compare(data, type_zero_only=False)[0]) == 1
     with pytest.raises(ValueError, match="positive"):
         compare(data, radius_km=0)
+
+
+def test_missing_type_is_reported_not_imputed():
+    """Missing classifications are counted, not silently assumed vegetation fires."""
+    data = pd.DataFrame([
+        row("MODIS", 8.5, -80, "2024-03-01T10:00:00Z", 2, "0"),
+        row("MODIS", 8.5, -80, "2024-03-01T10:00:00Z", 3, None),
+        row("VIIRS_SNPP", 8.5, -80, "2024-03-01T10:30:00Z", 4, ""),
+        row("VIIRS_SNPP", 8.5, -80, "2024-03-01T10:30:00Z", 5, "3"),
+        row("VIIRS_SNPP", 8.5, -80, "2024-03-01T10:30:00Z", 6, "0"),
+    ])
+
+    pairs, report = compare(data)
+    assert len(pairs) == 1
+    assert report["input_count"] == 5
+    assert report["selected_modis"] == 1
+    assert report["selected_viirs"] == 1
+    assert report["type_missing_in_input"] == 2
+    assert report["type_missing_by_sensor"] == {"MODIS": 1, "VIIRS_SNPP": 1}
+    assert report["excluded_missing_type"] == 2
+    assert report["excluded_other_type"] == 1
+
+    all_pairs, all_report = compare(data, type_zero_only=False)
+    assert len(all_pairs) == 3
+    assert all_report["type_missing_in_input"] == 2
+    assert all_report["excluded_missing_type"] == 0
+    assert all_report["excluded_other_type"] == 0

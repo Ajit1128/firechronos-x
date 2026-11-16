@@ -13,7 +13,11 @@ from pathlib import Path
 
 import pandas as pd
 
-REQUIRED_COLUMNS = {"latitude", "longitude", "acq_date", "acq_time", "instrument", "satellite", "version"}
+REQUIRED_COLUMNS = {
+    "latitude", "longitude", "acq_date",
+    "acq_time", "satellite", "version"
+}
+
 ALLOWED_SENSORS = {"MODIS", "VIIRS_SNPP"}
 # FIRMS version denotes collection AND processing stream (NASA FIRMS attribute tables).
 # Fail closed on unknown collections, rather than fabricating provenance labels.
@@ -87,18 +91,27 @@ def _validate_identity_and_version(df: pd.DataFrame, sensor: str) -> tuple[pd.Se
 
     Confirms internal CSV consistency, NOT independent NASA authenticity.
     """
-    
-    allowed_instruments = (
-        {"MODIS"} if sensor == "MODIS" else {"VIIRS", "SNPP"}
-    )
-    instruments = _text_column(df, "instrument").str.upper()
-    bad_instrument = ~instruments.isin(allowed_instruments)
 
-    if bad_instrument.any():
-        raise FIRMSValidationError(
-            f"Incompatibilidad de sensor declarado {sensor}: "
-            f"instrument encontrado {sorted(instruments[bad_instrument].unique().tolist())}."
+
+    # Validate instrument only when supplied by the CSV.
+    # MODIS archives may omit this column.
+
+    # Validate instrument only when supplied by the CSV.
+    if "instrument" in df.columns:
+        allowed_instruments = (
+            {"MODIS"} if sensor == "MODIS"
+            else {"VIIRS", "SNPP"}
         )
+
+        instruments = _text_column(df, "instrument").str.upper()
+        bad_instrument = ~instruments.isin(allowed_instruments)
+
+        if bad_instrument.any():
+            raise FIRMSValidationError(
+                f"Incompatibilidad de sensor declarado {sensor}: "
+                f"instrument encontrado "
+                f"{sorted(instruments[bad_instrument].unique().tolist())}."
+            )
 
     # NASA FIRMS: T=Terra, A=Aqua, N=Suomi NPP. Do not label NOAA-20/21 as S-NPP.
 
@@ -177,6 +190,13 @@ def load_firms_csv(path: Path | str, sensor: str) -> tuple[pd.DataFrame, dict]:
     missing = sorted(REQUIRED_COLUMNS - set(df.columns))
     if missing:
         raise FIRMSValidationError(f"Faltan columnas obligatorias en {path.name}: {missing}")
+
+
+    if sensor == "VIIRS_SNPP" and "instrument" not in df.columns:
+        raise FIRMSValidationError(
+            "Falta columna instrument para VIIRS_SNPP."
+        )
+
     if df.empty:
         raise FIRMSValidationError(f"CSV sin filas: {path.name}")
     source_products, source_processing = _validate_identity_and_version(df, sensor)
@@ -221,6 +241,7 @@ def load_firms_csv(path: Path | str, sensor: str) -> tuple[pd.DataFrame, dict]:
         "sha256": sha256,
         "records": int(len(df)),
         "original_columns": list(df.columns),
+        "instrument_column_present": "instrument" in df.columns,
         "missing_frp": int((frp_raw == "").sum()),
         "invalid_numeric_frp": int(invalid_frp.sum()),
         "raw_file_unchanged": True,
